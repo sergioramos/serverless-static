@@ -1,40 +1,46 @@
 'use strict';
-let express =  require("express")
-let morgan = require('morgan')
 
-module.exports = (serverless, settings ) => {
-  return new Promise((resolve, reject)=>{
+const { createServer } = require('http');
+const handler = require('serve-handler');
+const { resolve, relative } = require('path');
 
-    // settings.folder -> folder to serve
-    // setting.port -> port used to configure localhost
+const headers = [{
+  source: '**',
+  headers: [{
+    key: 'Access-Control-Allow-Origin',
+    value: '*'
+  }, {
+    key: 'Access-Control-Allow-Headers',
+    value: 'Origin, X-Requested-With, Content-Type, Accept, Range'
+  }]
+}];
 
-    let app = express()
+module.exports = ({ config, cli }, { path = 'public', port = 8000 }) => {
+  const { servicePath } = config;
+  const publicPath = resolve(servicePath, path);
 
-    app.use(morgan('dev', {
-      "stream": { 
-        write: (str) => { 
-            let write = `[ Static Serve ] from ${ settings.path } - ${ str }`
-            serverless.cli.log( write.replace(/[\n\r]+/g, '').trim() ) 
-        } 
-      }
-    }))
-    
-    app.use(express.static( settings.path ))
-
-    app.listen( settings.port, () => { 
-
-      serverless.cli.consoleLog('') 
-      serverless.cli.log( `[ Static ] serving files from ${ settings.path } folder` ); 
-      serverless.cli.log( `[ Static ] serving files on http://localhost:${ settings.port }` )
-      serverless.cli.consoleLog('') 
-      resolve()
-
+  const handleRequest = async (req, res) => {
+    return handler(req, res, {
+      public: publicPath,
+      cleanUrls: false,
+      headers,
+      directoryListing: false,
+      trailingSlash: true,
+      renderSingle: false,
     });
+  };
 
-  })
-}
+  const handleListening = (resolve) => () => {
+    const relPath = relative(servicePath, publicPath);
 
+    cli.consoleLog('');
+    cli.log(`[ Static ] serving files from ${relPath} folder`);
+    cli.log(`[ Static ] serving files on port ${port}`);
+    cli.consoleLog('');
+    resolve();
+  };
 
-
-
-
+  return new Promise((resolve) => {
+    return createServer(handleRequest).listen(port, handleListening(resolve));
+  });
+};
